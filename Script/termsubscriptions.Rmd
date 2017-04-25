@@ -43,6 +43,7 @@ ggplot(data.frame(bank), aes(x=term)) +
   scale_y_continuous(name = "Count") +
         ggtitle("Term Deposit Subscriptions")
 ```
+
 So what we are trying to figure out through the analysis going forward is how to determine who are the very few that say yes to term deposits subscriptions, and what has led them to that decision where the vast majority of the clients say no.
 
 #Analysis
