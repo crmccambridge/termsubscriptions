@@ -1,0 +1,188 @@
+---
+title: "Coming to Term with Deposit Subscriptions"
+author: "Connor McCambridge"
+date: "4/23/2017"
+output: html_document
+---
+
+You have been hired by Hometown Bank to help the company understands and improves its status in the term deposit market. The variable the bank seems most interested in understanding is “y::category”, which refers to whether the client has subscribed a term deposit. It is a factor with two levels: “yes” or “no.” The following table shows the variables in the data set:
+
+Make sure they understand clearly the business question you have investigated and the way you approached the answer.  The bank president is a very nervous person who will insist that you include multiple approaches in your analysis so he knows that you have covered all the bases.  He won’t listen to you if you don’t have at least three different models to back up your suggestions. Furthermore, the vice president of the bank is very skeptical of data science and will be looking for ways to discredit your work.  Make sure you clearly explain how the data are handled, the models tested, and the recommendations arrived at or he will not believe you. Beware of jargon – it will definitely put the vice president off.  
+
+You should address all three grading parameters in your markdown file: 1) What is the problem?; 2) What have you done to address the problem?; and 3) What are your recommendations?
+
+![](https://p15cdn4static.sharpschool.com/UserFiles/Servers/Server_54619/Image/Departments/Finance/34project-finance.jpg)
+
+#Introduction
+
+Howntown Bank was looking to better understand their status in the term deposit market and gain insights of how to improve that status by encouraging more clients to subscribe to them. This was done by examining the information of clients and the marketing efforts towards them, this information includes whether they had a term deposits with the bank.
+
+The dataset provided by the bank included information a large number of client information. There were 45,211 different clients that were included in this dataset. Besides whether the customer had a term deposit, the information provided also included age, job level, marital status, education level, if they have defaulted on a loan before, if they have mortgage, if they have a personal loan, method of contact, the day and months since they were last contacted, the last contact duration in seconds, number of contacts during this campaign, if the client was contacted during the last campaign, days past since the client was contacted during the last campaign, number of previous contacts with the client before this campaign, and whether previous campaign was successful on this client.
+
+
+```{r load data and prep, include=FALSE}
+library(caret)
+library(lattice)
+library(ggplot2)
+library(C50)
+library(plyr)
+library(rpart.plot)
+library(randomForest)
+library(mlbench)
+library(adabag)
+library(partykit)
+library(rattle)
+options(scipen=999)
+bank<-read.csv("~/Documents/BIA 6301 Data Mining/Module 6/termsubscriptions/data/bank-full.csv")
+colnames(bank) <- c("age", "job","marital_status", "education","default","balance","mortgage", "loan","contact","day", "month", "duration", "campaign", "days_passed", "previous", "previous_outcome", "term")
+bank$previous_outcome<-as.factor(ifelse(bank$previous_outcome=="success","yes","no"))
+bank$previous_contact<-as.factor(ifelse(bank$days_passed== -1,"no","yes"))
+bank$days_passed[bank$days_passed == -1] <- 0
+bank<-bank[,c(17,1:13,18,14:16)]
+summary(bank)
+#str(bank)
+```
+Here is the count of the number of term deposit subscribers in the information provided by the bank:
+```{r term graph, echo=FALSE}
+ggplot(data.frame(bank), aes(x=term)) +
+  geom_bar(colour = "gold1", fill = "goldenrod2") +
+  scale_x_discrete(name = "Term Deposits")+
+  scale_y_continuous(name = "Count") +
+        ggtitle("Term Deposit Subscriptions")
+```
+So what we are trying to figure out through the analysis going forward is how to determine who are the very few that say yes to term deposits subscriptions, and what has led them to that decision where the vast majority of the clients say no.
+
+#Analysis
+
+To gain this insight into term deposit subscriptions, I decided to create a variety of different models that would try to predict whether clients would sign up for term deposits. This is done by splitting the data into two groups, a training set that the models are built from and a testing set where performance is predicted and examined. In creating these models we can examine which variables are most important to term deposit subscriptions.
+
+```{r seperate the data, include=FALSE}
+set.seed(123)
+trainIndex <- createDataPartition(bank$term, p = .8,list = FALSE,times = 1)
+bank_train <- bank[trainIndex,]
+bank_test <- bank[-trainIndex,]
+```
+
+####Rpart Decision Tree
+
+The first method used to try to understand which clients were subscribing to term deposits and why was a decision tree method. With a decision tree first the attribute that is most predictive of the target variable is selected. Then observations in the training dataset are divided into groups of distinct values. Then the decision tree will continue to divide and conquer, choosing the feature with the most prediction power each time until either all observations for a given node belong to the same class, no more remaining attributes for further partitioning or no observations are left.
+
+Here is the decision tree that was created to predict term subscriptions:
+
+```{r rpart model, include=FALSE}
+bank_rpart <- rpart(term~., method="class", parms = list(split="gini"), data=bank_train)
+```
+
+```{r rpart model plot, echo=FALSE}
+rpart.plot(bank_rpart, type=1, extra=101)
+```
+
+Even though the decision tree is not very big or complex, it does give us valuable insights to the how people decide to subscribe to term deposits. It shows that the two variables that used in making decisions are how long was the duration of the client's last contact with the bank and whether the previous campaign was successful on the client. 
+
+And now that we have the model in place, let's take a look at how successful the model was at predicting whether a client will subscribe to term deposits by looking at confusion matrix of the results. A confusion matrix takes the testing data and compares the actual result of term subscriptions to a predicted result built with the model created. Here are those results:
+
+```{r rpart confusion martix, echo=FALSE}
+actual <- bank_test$term
+predicted <- predict(bank_rpart, bank_test, type="class")
+results.matrix <- confusionMatrix(predicted, actual, positive="yes")
+print(results.matrix)
+```
+
+In looking at the overall results, the accuracy of the model was good at 90.03%. Since we are focusing on correctly determining whether the clients will subscribe to a term deposit, the figure we want to focus on is the sensitivity of the model. The sensitivity is the true positive rate, meaning how many of the actual term subscriptions were properly identified as term subscriptions. In this model, the sensitivity is 36.42%.
+
+####Bootstrapping Decision Tree
+
+In order to better gauge the expected performance in the decision tree modeling, I decided to use a resampling technique to build another decision tree model. Resampling is done by to drawing repeated samples from the samples we have. The method I am going to use for resampling is the bootstrapping method.
+
+Bootstrapping obtains distinct datasets by repeatedly sampling observations from the training dataset with replacement. Each bootstrapped dataset is created by sampling with replacement and is the same size as the original dataset. By this method, some observations may appear more than once while some other observations may not happen to appear at all.
+
+Here is the bootstrapping decision tree that was created to predict term subscriptions:
+
+```{r bootstrapping model, include=FALSE}
+fitControl <- trainControl(method="boot", number=10)
+
+set.seed(123)
+bank_boot<-train(term~., data=bank_test, method="rpart", metric="Accuracy", trControl=fitControl)
+```
+
+```{r bootstrapping model plot, echo=FALSE}
+fancyRpartPlot(bank_boot$finalModel)
+```
+
+This new bootstrapping decision tree created still shows that the two most important variables are the duration of the client's last contact with the bank and whether the previous campaign was successful on the client. Though the newly created decision tree does resemble the originally created decision tree, this tree is a lot simpler. The durations used in this tree is slightly different for the first tree, where the first tree was separated at a duration of 518 this one is separated at 470. If the duration is greater than that first split in the first tree the next split was at a duration of 800 where this model the duration was at 834. And this model just stops at 3 branches where the first model had 5 branches.
+
+Now let's examine how successful this model was looking at this model's confusion matrix:
+
+```{r bootstrapping confusion matrix, echo=FALSE}
+boot_actual <- bank_test$term
+boot_predicted <- predict(bank_boot, bank_test, type="raw")
+boot_results.matrix <- confusionMatrix(boot_predicted, boot_actual, positive="yes")
+print(boot_results.matrix)
+```
+
+With the bootstrapped decision tree both the accuracy and the sensitivity is lower than the original tree created, at 89.70% and 35.10% respectively. What this shows is that the original decision tree that was created actually outperformed where it was expected to be, comparing it to the resampled bootstrapping decision tree. But with this decision tree created with resampling, there is reduce the error and variance that goes along with the creation of a single decision tree model.
+
+####Bagging
+
+Another way to examine which variables are important to determining whether a client will subscribe to term deposits and to try to increase the performances of the decision tree models is by using ensemble models. In doing this I am trying to produce a procedure with low variance when applied repeatedly to distinct datasets.
+
+One of the ensemble models I will using is called bagging. What bagging does is it fits many large decisions trees to a bootstrap-resampled versions of the training dataset and then classifies them by majority vote. This averages many different trees together, 500 trees in this example. Bagging lowers the variance of the decision trees leading to improved prediction, but in doing this we lose the structure of the decision tree. In bagging all variable are considered for each split. We can still examine the important variables of the model and the results the model produces.
+
+These are the rankings of important variables in the bagging model:
+
+```{r bagging model, include=FALSE}
+library(randomForest)
+set.seed(123) 
+
+bank.bag <- randomForest(term~., mtry=9, data=bank_train, na.action=na.omit, importance=TRUE)
+```
+
+```{r bagging model plot, echo=FALSE}
+varImpPlot(bank.bag)
+```
+
+The mean decrease accuracy is how much the model fit decreases when you drop a selected variable and the mean decrease Gini is how much node impurity decreases when you drop the selected variable. In both mean decrease accuracy and mean decrease Gini it shows that duration is the most impactful variable by quite a large margin. Other leading variables in this model are the day and months since the client was last contacted, age, and the outcome of the previous marketing campaign.
+
+The following are the results of the predictions of low variance bagging model in the confusion matrix:
+
+```{r bagging confusion martix, echo=FALSE}
+bag_actual <- bank_test$term 
+bag_predicted <- predict(bank.bag, bank_test, type="class") 
+bag_results<- confusionMatrix(bag_predicted, bag_actual, positive="yes") 
+print(bag_results)
+```
+
+This ensemble model has a slightly better accuracy than the original decision tree produced and the bootstrapped decision tree, but the real difference in this model's sensitivity. Through the use of bagging the sensitivity of the model was able to be increased to 53.27%. This low variance technique of decision tree model seems to be beneficial to the predictive results found.
+
+####Random Forest
+
+The random forest ensemble modeling is a lot like bagging, but instead of being able to use any variable at a split only a subset of the variables can be used. This means the node splits are not controlled by only one or two strong variables giving other variables more of a chance to be included in the model. Like the When we average the resulting trees, we get more reliable results since the individual trees are not dominated by a few strong predictors. Again this model will averages 500 different trees together. Just like bagging, random forests lowers the variance of the decision trees leading to improved prediction, but still, loses the structure of the decision tree. We will once again examine the important variables of the model and the results the model produces.
+
+These are the rankings of important variables in the random forest model:
+```{r random forest model, include=FALSE}
+bank_rf <- randomForest(term~.,data=bank_train, mtry=3, ntree=500,na.action = na.omit, importance=TRUE)
+```
+
+```{r random forest model plot, echo=FALSE}
+varImpPlot(bank_rf) 
+```
+
+The random forest model it also shows that in both the mean decrease accuracy and mean decrease Gini lists duration as the most important variable in the model. Other leading variables in this model are the day and months since the client was last contacted, the age of the client and outcome of the previous marketing campaign is still up there but is not as important as it was in the bagging model. 
+
+The following are the results of the predictions of the random forest model in the confusion matrix:
+```{r random forest confusion martix, echo=FALSE}
+rf_actual <- bank_test$term 
+rf_predicted <- predict(bank_rf, bank_test, type="class") 
+rf_results<- confusionMatrix(rf_predicted, rf_actual, positive="yes") 
+print(rf_results)
+```
+
+The random forest, like the other ensemble model, outperformed both the original decision tree model created and the bootstrapped decision tree, but it did not outperform the bagging model. The accuracy was slightly lower than the bagging model at 90.66% but the sensitivity was much lower at 42.67%. I think that this result from random tree model shows how much the duration variable really dominated the bagging the model, and how much of effect it has when you try to use other variables instead of duration when building decision trees.
+
+#Recommendation
+
+From the four different models produced looking at term deposit subscriptions at Hometown Bank, I think that is clear to see that the most important variable when trying to predict whether a client will subscribe to a term deposit is the duration of their last contact as part of the marketing campaign. There are some other important variables such as the result of the previous campaign, highlighted in all the models created, and the day and month since the client were last contacted, as highlights in the bagging and random forest model. 
+
+What can be taken away from this is the most important part of trying to get a client to subscribed to a term deposit is the chance to communicate with them why term deposit is right for them, there were a lot of other variables that didn't have nearly as much of an impact as this single variable. So going forward it worth investigating what exactly is the best way to get the clients to listen longer to the benefits of term deposits, because the longer they listen the more likely they are to subscribe.
+
+A final note of something that is worth examining in the future is the effect of the total duration of contact with clients has on the effect of clients subscribing. The average client was contacted 2.7 times during this campaign, and one client was contacted 63 times. If the duration of just one interaction was so powerful in affecting the predictions of term deposit subscriptions, leads me to think that the longer the total duration of all contact, the more likely a client is to subscribe.
