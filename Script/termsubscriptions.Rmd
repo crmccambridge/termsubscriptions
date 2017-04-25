@@ -4,13 +4,6 @@ author: "Connor McCambridge"
 date: "4/23/2017"
 output: html_document
 ---
-
-You have been hired by Hometown Bank to help the company understands and improves its status in the term deposit market. The variable the bank seems most interested in understanding is “y::category”, which refers to whether the client has subscribed a term deposit. It is a factor with two levels: “yes” or “no.” The following table shows the variables in the data set:
-
-Make sure they understand clearly the business question you have investigated and the way you approached the answer.  The bank president is a very nervous person who will insist that you include multiple approaches in your analysis so he knows that you have covered all the bases.  He won’t listen to you if you don’t have at least three different models to back up your suggestions. Furthermore, the vice president of the bank is very skeptical of data science and will be looking for ways to discredit your work.  Make sure you clearly explain how the data are handled, the models tested, and the recommendations arrived at or he will not believe you. Beware of jargon – it will definitely put the vice president off.  
-
-You should address all three grading parameters in your markdown file: 1) What is the problem?; 2) What have you done to address the problem?; and 3) What are your recommendations?
-
 ![](https://p15cdn4static.sharpschool.com/UserFiles/Servers/Server_54619/Image/Departments/Finance/34project-finance.jpg)
 
 #Introduction
